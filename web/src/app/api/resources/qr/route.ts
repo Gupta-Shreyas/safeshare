@@ -25,7 +25,7 @@ export async function GET(req: Request) {
     if (!okState) return NextResponse.json({ error: "This item is not at the right step for that QR code" }, { status: 409 });
 
     const token = makeToken(id, kind, g.s.address);
-    const qr = await QRCode.toDataURL(token, { width: 320, margin: 1 });
+    const qr = await QRCode.toDataURL(token, { width: 480, margin: 2 });
     audit(g.s.username, "QR_ISSUED", `${kind} #${id}`);
     return NextResponse.json({ token, qr, expiresInSec: 600 });
   } catch {

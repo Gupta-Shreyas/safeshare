@@ -1,8 +1,14 @@
 import type { NextConfig } from "next";
+import os from "os";
 
 const dev = process.env.NODE_ENV !== "production";
 
-// Dev mode needs eval and websockets for hot reload; production does not.
+// Phones on the same Wi-Fi reach the dev server through the laptop's LAN address.
+const lan = Object.values(os.networkInterfaces())
+  .flat()
+  .filter((i): i is os.NetworkInterfaceInfo => !!i && i.family === "IPv4" && !i.internal)
+  .map((i) => i.address);
+
 const csp = [
   "default-src 'self'",
   `script-src 'self' 'unsafe-inline'${dev ? " 'unsafe-eval'" : ""}`,
@@ -19,6 +25,7 @@ const csp = [
 const nextConfig: NextConfig = {
   serverExternalPackages: ["sql.js"],
   poweredByHeader: false,
+  allowedDevOrigins: lan,
   async headers() {
     return [
       {
@@ -28,7 +35,7 @@ const nextConfig: NextConfig = {
           { key: "X-Frame-Options", value: "DENY" },
           { key: "X-Content-Type-Options", value: "nosniff" },
           { key: "Referrer-Policy", value: "strict-origin-when-cross-origin" },
-          { key: "Permissions-Policy", value: "camera=(), microphone=(), geolocation=()" },
+          { key: "Permissions-Policy", value: "camera=(self), microphone=(), geolocation=()" },
         ],
       },
     ];

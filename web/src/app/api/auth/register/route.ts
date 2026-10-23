@@ -28,7 +28,11 @@ export async function POST(req: Request) {
   const { username, password } = parsed.data;
   const email = parsed.data.email.toLowerCase();
 
-  const exists = db.prepare("SELECT 1 FROM users WHERE username = ? OR email = ?").get(username, email);
+  // Hash first. No await may sit between "pick the next account number" and the INSERT below,
+  // otherwise two people registering at the same moment could be given the same blockchain account.
+  const hash = await bcrypt.hash(password, 10);
+
+  const exists = db.prepare("SELECT 1 AS x FROM users WHERE username = ? OR email = ?").get(username, email);
   if (exists) return NextResponse.json({ error: "Username or email already in use" }, { status: 409 });
 
   const row = db.prepare("SELECT MAX(account_index) AS m FROM users").get() as { m: number | null };
@@ -36,10 +40,13 @@ export async function POST(req: Request) {
   if (idx > 19) return NextResponse.json({ error: "Demo is full (19 accounts)" }, { status: 503 });
 
   const address = walletFor(idx).address;
-  const hash = await bcrypt.hash(password, 10);
-  db.prepare(
-    "INSERT INTO users (username, email, password_hash, role, account_index, address, created_at) VALUES (?, ?, ?, 'user', ?, ?, ?)"
-  ).run(username, email, hash, idx, address, Date.now());
+  try {
+    db.prepare(
+      "INSERT INTO users (username, email, password_hash, role, account_index, address, created_at) VALUES (?, ?, ?, 'user', ?, ?, ?)"
+    ).run(username, email, hash, idx, address, Date.now());
+  } catch {
+    return NextResponse.json({ error: "Username or email already in use" }, { status: 409 });
+  }
 
   audit(username, "REGISTER", address, ip);
   return NextResponse.json({ ok: true, username, address }, { status: 201 });

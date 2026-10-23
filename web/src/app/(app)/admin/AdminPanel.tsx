@@ -1,6 +1,6 @@
 "use client";
 import { useCallback, useEffect, useState } from "react";
-import { api } from "@/lib/client";
+import { api, shortAddr, timeAgo } from "@/lib/client";
 
 type U = { id: number; username: string; email: string; role: string; address: string; verified: boolean; blacklisted: boolean; credits: number };
 type L = { id: number; ts: number; actor: string; action: string; detail: string; ip: string };
@@ -20,7 +20,9 @@ export default function AdminPanel() {
     if (!u.ok) setMsg(u.data.error ?? "Failed to load users");
   }, []);
 
-  useEffect(() => { load(); }, [load]);
+  useEffect(() => {
+    load();
+  }, [load]);
 
   async function act(key: string, path: string, body: unknown) {
     setBusy(key);
@@ -31,83 +33,69 @@ export default function AdminPanel() {
     setBusy("");
   }
 
-  const btn = "rounded-md px-3 py-1 text-xs font-medium disabled:opacity-40";
+  const btn = "rounded-lg px-3 py-1.5 text-xs font-semibold disabled:opacity-40";
 
-  return (
-    <div className="space-y-8">
-      <div className="flex items-center justify-between">
-        <h1 className="text-2xl font-bold">Admin panel</h1>
-        <button
-          disabled={busy === "pause"}
-          onClick={() => act("pause", "/api/admin/pause", { paused: !paused })}
-          className={`${btn} ${paused ? "bg-emerald-600" : "bg-red-600"} text-sm`}
-        >
-          {paused ? "Resume system (unpause contract)" : "Emergency pause (freeze contract)"}
-        </button>
+  return (<div className="mx-auto max-w-3xl space-y-6">
+      <div>
+        <h1 className="text-xl font-bold">Admin panel</h1>
+        <p className="text-sm text-muted">Verification, blacklist and emergency pause are written to the blockchain.</p>
       </div>
-      {paused && <p className="rounded-lg bg-red-950 text-red-300 p-3">The contract is paused. No one can register, request or check out.</p>}
-      {msg && <p className="rounded-lg bg-slate-900 border border-slate-700 p-3 text-sm break-all">{msg}</p>}
 
-      <section>
-        <h2 className="font-semibold mb-2">Users (status read live from the blockchain)</h2>
-        <div className="overflow-x-auto rounded-xl border border-slate-800">
-          <table className="w-full text-sm">
-            <thead className="bg-slate-900 text-slate-400 text-left">
-              <tr>
-                <th className="p-3">User</th><th>Role</th><th>Address</th><th>Verified</th><th>Credits</th><th>Actions</th>
-              </tr>
-            </thead>
-            <tbody>
-              {users.map((u) => (
-                <tr key={u.id} className="border-t border-slate-800">
-                  <td className="p-3">{u.username}<div className="text-xs text-slate-500">{u.email}</div></td>
-                  <td>{u.role}</td>
-                  <td className="font-mono text-xs">{u.address.slice(0, 8)}...{u.address.slice(-6)}</td>
-                  <td>
-                    {u.blacklisted ? <span className="text-red-400">Blacklisted</span> : u.verified ? <span className="text-emerald-400">Verified</span> : <span className="text-amber-400">Pending</span>}
-                  </td>
-                  <td>{u.credits}</td>
-                  <td className="space-x-2">
-                    {!u.verified && (
-                      <button disabled={!!busy} onClick={() => act("v" + u.id, "/api/admin/verify", { username: u.username })} className={`${btn} bg-emerald-600`}>
-                        Verify on-chain
-                      </button>
-                    )}
-                    {u.role !== "admin" && (
-                      <button disabled={!!busy} onClick={() => act("b" + u.id, "/api/admin/blacklist", { username: u.username, status: !u.blacklisted })} className={`${btn} bg-slate-700`}>
-                        {u.blacklisted ? "Unblacklist" : "Blacklist"}
-                      </button>
-                    )}
-                  </td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
-        </div>
+      <button
+        disabled={busy === "pause"}
+        onClick={() => act("pause", "/api/admin/pause", { paused: !paused })}
+        className={`w-full rounded-xl py-3 text-sm font-bold text-white active:scale-95 disabled:opacity-50 ${paused ? "bg-emerald-600" : "bg-primary shadow-glow"}`}
+      >
+        {paused ? "Resume system (unpause contract)" : "Emergency pause (freeze contract)"}
+      </button>
+      {paused && <p className="rounded-xl bg-red-50 p-3 text-sm text-red-700">The contract is paused. No one can register, request or check out.</p>}
+      {msg && <p className="break-all rounded-xl bg-white p-3 text-sm shadow-card">{msg}</p>}
+
+      <section className="space-y-3">
+        <h2 className="font-semibold">Users (status read live from the blockchain)</h2>
+        {users.map((u) => (
+          <div key={u.id} className="space-y-3 rounded-2xl bg-white p-4 shadow-card">
+            <div className="flex items-start justify-between gap-2">
+              <div className="min-w-0">
+                <p className="font-bold">{u.username} <span className="ml-1 rounded bg-stone-100 px-1.5 py-0.5 text-[10px] font-semibold uppercase text-muted">{u.role}</span></p>
+                <p className="truncate text-xs text-muted">{u.email}</p>
+                <p className="font-mono text-[11px] text-muted">{shortAddr(u.address)} - {u.credits} credits</p>
+              </div>
+              <span className={`whitespace-nowrap rounded-full px-3 py-1 text-xs font-semibold ${u.blacklisted ? "bg-red-50 text-red-700" : u.verified ? "bg-emerald-50 text-emerald-700" : "bg-amber-50 text-amber-700"}`}>
+                {u.blacklisted ? "Blacklisted" : u.verified ? "Verified" : "Pending"}
+              </span>
+            </div>
+            <div className="flex gap-2">
+              {!u.verified && (
+                <button disabled={!!busy} onClick={() => act("v" + u.id, "/api/admin/verify", { username: u.username })} className={`${btn} bg-primary text-white`}>
+                  Verify on-chain
+                </button>
+              )}
+              {u.role !== "admin" && (
+                <button disabled={!!busy} onClick={() => act("b" + u.id, "/api/admin/blacklist", { username: u.username, status: !u.blacklisted })} className={`${btn} bg-stone-100 text-ink`}>
+                  {u.blacklisted ? "Unblacklist" : "Blacklist"}
+                </button>
+              )}
+            </div>
+          </div>
+        ))}
       </section>
 
-      <section>
-        <div className="flex items-center justify-between mb-2">
+      <section className="space-y-2">
+        <div className="flex items-center justify-between">
           <h2 className="font-semibold">Security audit log</h2>
-          <button onClick={load} className={`${btn} bg-slate-800`}>Refresh</button>
+          <button onClick={load} className={`${btn} bg-stone-100 text-ink`}>Refresh</button>
         </div>
-        <div className="overflow-x-auto rounded-xl border border-slate-800 max-h-96 overflow-y-auto">
-          <table className="w-full text-xs">
-            <thead className="bg-slate-900 text-slate-400 text-left sticky top-0">
-              <tr><th className="p-2">Time</th><th>Actor</th><th>Action</th><th>Detail</th></tr>
-            </thead>
-            <tbody>
-              {logs.map((l) => (
-                <tr key={l.id} className="border-t border-slate-800">
-                  <td className="p-2 whitespace-nowrap">{new Date(l.ts).toLocaleTimeString()}</td>
-                  <td>{l.actor}</td>
-                  <td className={/FAILED|LOCKED|FORBIDDEN|BLOCKED/.test(l.action) ? "text-red-400" : ""}>{l.action}</td>
-                  <td className="font-mono break-all">{l.detail}</td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
-        </div>
+        {logs.map((l) => (
+          <div key={l.id} className="rounded-xl bg-white p-3 text-xs shadow-card">
+            <div className="flex justify-between">
+              <b className={/FAILED|LOCKED|FORBIDDEN|BLOCKED/.test(l.action) ? "text-red-600" : ""}>{l.action}</b>
+              <span className="text-muted">{timeAgo(l.ts)}</span>
+            </div>
+            <p className="text-muted">{l.actor}</p>
+            {l.detail && <p className="break-all font-mono text-[11px]">{l.detail}</p>}
+          </div>
+        ))}
       </section>
     </div>
   );

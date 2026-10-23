@@ -20,7 +20,17 @@ export interface Db {
 }
 
 function wrap(sdb: SqlDb): Db {
-  const persist = () => fs.writeFileSync(file, Buffer.from(sdb.export()));
+  // Write to a temp file and rename, so a crash mid-save can never corrupt the database.
+  const persist = () => {
+    const data = Buffer.from(sdb.export());
+    const tmp = file + ".tmp";
+    try {
+      fs.writeFileSync(tmp, data);
+      fs.renameSync(tmp, file);
+    } catch {
+      fs.writeFileSync(file, data);
+    }
+  };
   return {
     exec(sql) {
       sdb.exec(sql);
@@ -106,8 +116,12 @@ async function init(): Promise<Db> {
   return db;
 }
 
-const g = globalThis as unknown as { __ssdb?: Db };
-export const db: Db = g.__ssdb ?? (g.__ssdb = await init());
+// The promise is shared, so simultaneous first requests all get the same single database instance.
+const g = globalThis as unknown as { __ssdbp?: Promise<Db> };
+export const db: Db = await (g.__ssdbp ??= init().catch((e) => {
+  g.__ssdbp = undefined;
+  throw e;
+}));
 
 export function audit(actor: string, action: string, detail = "", ip = "") {
   db.prepare("INSERT INTO audit_log (ts, actor, action, detail, ip) VALUES (?, ?, ?, ?, ?)").run(
