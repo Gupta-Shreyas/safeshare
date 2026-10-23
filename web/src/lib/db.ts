@@ -13,7 +13,7 @@ const file = path.join(dir, "safeshare.db");
 try {
   fs.mkdirSync(dir, { recursive: true });
 } catch {
-  // Directory already exists or path handled
+  // Directory already exists
 }
 
 type Param = string | number | null;
@@ -35,7 +35,7 @@ function wrap(sdb: SqlDb): Db {
       fs.writeFileSync(tmp, data);
       fs.renameSync(tmp, file);
     } catch {
-      // Handle temporary disk edge cases gracefully
+      // Handle temporary disk edge cases
     }
   };
   return {
@@ -83,10 +83,26 @@ function wrap(sdb: SqlDb): Db {
   };
 }
 
+async function getWasmBinary(): Promise<Buffer> {
+  // Check public folder
+  const pubPath = path.join(process.cwd(), "public", "sql-wasm.wasm");
+  if (fs.existsSync(pubPath)) {
+    return fs.readFileSync(pubPath);
+  }
+  // Check node_modules
+  const nmPath = path.join(process.cwd(), "node_modules", "sql.js", "dist", "sql-wasm.wasm");
+  if (fs.existsSync(nmPath)) {
+    return fs.readFileSync(nmPath);
+  }
+  // Fallback to fetching via network
+  const res = await fetch("https://sql.js.org/dist/sql-wasm.wasm");
+  const ab = await res.arrayBuffer();
+  return Buffer.from(ab);
+}
+
 async function init(): Promise<Db> {
-  const SQL = await initSqlJs({
-    locateFile: (f: string) => `https://sql.js.org/dist/${f}`,
-  });
+  const wasmBinary = await getWasmBinary();
+  const SQL = await initSqlJs({ wasmBinary });
   const sdb = fs.existsSync(file) ? new SQL.Database(fs.readFileSync(file)) : new SQL.Database();
   const db = wrap(sdb);
 
