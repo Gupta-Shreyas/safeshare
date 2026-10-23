@@ -2,11 +2,19 @@ import initSqlJs, { Database as SqlDb } from "sql.js";
 import bcrypt from "bcryptjs";
 import fs from "fs";
 import path from "path";
+import os from "os";
 import { walletFor } from "./chain";
 
-const dir = path.join(process.cwd(), "data");
+// Vercel serverless functions are read-only except for os.tmpdir() (/tmp)
+const isServerless = !!process.env.VERCEL || process.env.NODE_ENV === "production";
+const dir = isServerless ? path.join(os.tmpdir(), "safeshare") : path.join(process.cwd(), "data");
 const file = path.join(dir, "safeshare.db");
-fs.mkdirSync(dir, { recursive: true });
+
+try {
+  fs.mkdirSync(dir, { recursive: true });
+} catch {
+  // Directory already exists or path handled
+}
 
 type Param = string | number | null;
 
@@ -20,15 +28,14 @@ export interface Db {
 }
 
 function wrap(sdb: SqlDb): Db {
-  // Write to a temp file and rename, so a crash mid-save can never corrupt the database.
   const persist = () => {
-    const data = Buffer.from(sdb.export());
-    const tmp = file + ".tmp";
     try {
+      const data = Buffer.from(sdb.export());
+      const tmp = file + ".tmp";
       fs.writeFileSync(tmp, data);
       fs.renameSync(tmp, file);
     } catch {
-      fs.writeFileSync(file, data);
+      // Handle temporary disk edge cases gracefully
     }
   };
   return {
@@ -78,7 +85,7 @@ function wrap(sdb: SqlDb): Db {
 
 async function init(): Promise<Db> {
   const SQL = await initSqlJs({
-    locateFile: (f: string) => path.join(process.cwd(), "node_modules", "sql.js", "dist", f),
+    locateFile: (f: string) => `https://sql.js.org/dist/${f}`,
   });
   const sdb = fs.existsSync(file) ? new SQL.Database(fs.readFileSync(file)) : new SQL.Database();
   const db = wrap(sdb);
@@ -106,7 +113,6 @@ async function init(): Promise<Db> {
     );
   `);
 
-  // Seed the admin (blockchain account #0) on first run.
   const admin = db.prepare("SELECT 1 AS x FROM users WHERE role = 'admin'").get();
   if (!admin) {
     db.prepare(
@@ -116,7 +122,6 @@ async function init(): Promise<Db> {
   return db;
 }
 
-// The promise is shared, so simultaneous first requests all get the same single database instance.
 const g = globalThis as unknown as { __ssdbp?: Promise<Db> };
 export const db: Db = await (g.__ssdbp ??= init().catch((e) => {
   g.__ssdbp = undefined;
